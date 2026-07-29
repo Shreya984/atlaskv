@@ -1,16 +1,15 @@
 package com.atlaskv.service;
 
+import java.io.IOException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.springframework.stereotype.Service;
 
+import com.atlaskv.persistence.PersistenceStrategy;
 import com.atlaskv.storage.StorageEngine;
 
 @Service
 public class StorageService {
-
-    private final StorageEngine storageEngine;
-
     /**
      * AtlasKV currently uses a single coarse-grained lock.
      *
@@ -25,18 +24,25 @@ public class StorageService {
      *
      * Correctness is intentionally prioritized over maximum read concurrency.
      */
+
+    private final StorageEngine storageEngine;
+    private final PersistenceStrategy persistenceStrategy;
+
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
-    public StorageService(StorageEngine storageEngine) {
+    public StorageService(StorageEngine storageEngine, PersistenceStrategy persistenceStrategy) {
         this.storageEngine = storageEngine;
+        this.persistenceStrategy = persistenceStrategy;
     }
 
     public void put(String key, String value) {
-
         lock.writeLock().lock();
 
         try {
             storageEngine.put(key, value);
+            persistenceStrategy.appendPut(key, value);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to persist PUT operation.", e);
         } finally {
             lock.writeLock().unlock();
         }
@@ -64,6 +70,9 @@ public class StorageService {
 
         try {
             storageEngine.delete(key);
+            persistenceStrategy.appendDelete(key);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to persist DELETE operation.", e);
         } finally {
             lock.writeLock().unlock();
         }

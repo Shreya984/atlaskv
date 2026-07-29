@@ -1,25 +1,51 @@
 package com.atlaskv.service;
 
-import com.atlaskv.storage.StorageEngine;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import com.atlaskv.persistence.AppendOnlyLog;
+import com.atlaskv.storage.StorageEngine;
 
 class StorageServiceConcurrencyTest {
 
     private StorageService storageService;
     private StorageEngine storageEngine;
 
+    private StorageService createStorageService(StorageEngine engine) {
+
+        try {
+
+            Path logFile = Files.createTempFile("atlaskv-test", ".aof");
+
+            return new StorageService(
+                    engine,
+                    new AppendOnlyLog(logFile)
+            );
+
+        } catch (IOException e) {
+
+            throw new RuntimeException(e);
+
+        }
+    }
+
+
     @BeforeEach
     void setUp() {
         storageEngine = new StorageEngine();
-        storageService = new StorageService(storageEngine);
+        storageService = createStorageService(storageEngine);
     }
 
     @Test

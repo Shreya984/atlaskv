@@ -1,12 +1,13 @@
 package com.atlaskv.storage;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import org.springframework.stereotype.Component;
+
 import com.atlaskv.exception.KeyNotFoundException;
 import com.atlaskv.lru.LRUCache;
 import com.atlaskv.lru.Node;
-import org.springframework.stereotype.Component;
-
-import java.util.HashMap;
-import java.util.Map;
 
 @Component
 public class StorageEngine {
@@ -121,5 +122,15 @@ public class StorageEngine {
                     "Cache exceeded capacity."
             );
         }
+    }
+
+    public Map<String, String> snapshot() {
+        Map<String, String> copy = new HashMap<>();
+
+        for (Node node : storage.values()) {
+            copy.put(node.getKey(), node.getValue());
+        }
+
+        return copy;
     }
 }

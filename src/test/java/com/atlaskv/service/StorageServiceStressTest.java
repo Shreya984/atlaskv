@@ -1,5 +1,8 @@
 package com.atlaskv.service;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.atlaskv.exception.KeyNotFoundException;
+import com.atlaskv.persistence.AppendOnlyLog;
 import com.atlaskv.storage.StorageEngine;
 
 class StorageServiceStressTest {
@@ -21,10 +25,29 @@ class StorageServiceStressTest {
     private StorageService storageService;
     private StorageEngine storageEngine;
 
+    private StorageService createStorageService(StorageEngine engine) {
+
+        try {
+
+            Path logFile = Files.createTempFile("atlaskv-test", ".aof");
+
+            return new StorageService(
+                    engine,
+                    new AppendOnlyLog(logFile)
+            );
+
+        } catch (IOException e) {
+
+            throw new RuntimeException(e);
+
+        }
+    }
+
     @BeforeEach
-    void setUp() {
+    void setUp() throws IOException {
+
         storageEngine = new StorageEngine(100);
-        storageService = new StorageService(storageEngine);
+        storageService = createStorageService(storageEngine);
     }
 
     @Test
@@ -97,11 +120,11 @@ class StorageServiceStressTest {
     }
 
     @Test
-    void concurrentEvictionNeverExceedsCapacity() throws InterruptedException {
+    void concurrentEvictionNeverExceedsCapacity() throws InterruptedException, IOException {
 
         int capacity = 25;
         storageEngine = new StorageEngine(capacity);
-        storageService = new StorageService(storageEngine);
+        storageService = createStorageService(storageEngine);
 
         int numberOfThreads = 50;
         int insertsPerThread = 200;
@@ -144,10 +167,10 @@ class StorageServiceStressTest {
     }
 
     @Test
-    void concurrentUpdatesToSameKeyRemainConsistent() throws InterruptedException {
+    void concurrentUpdatesToSameKeyRemainConsistent() throws InterruptedException, IOException {
 
         storageEngine = new StorageEngine(10);
-        storageService = new StorageService(storageEngine);
+        storageService = createStorageService(storageEngine);
 
         int numberOfThreads = 100;
 
