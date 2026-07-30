@@ -35,51 +35,37 @@ public class LogReplayer {
 
         for (String line : lines) {
             if (line.isBlank()) continue;
-            replayLine(line);
-            replayed++;
+            if(replayLine(line)) replayed++;
         }
 
         return replayed;
     }
 
-    private void replayLine(String line) {
+    private boolean replayLine(String line) {
 
         String[] parts = line.split(" ", 3);
 
-        if (parts.length == 0) {
-            return;
-        }
+        if (parts.length == 0) return false;
 
         switch (parts[0]) {
 
             case "PUT" -> {
-
-                if (parts.length != 3) {
-                    return;
-                }
-
-                storageEngine.put(
-                        unescape(parts[1]),
-                        unescape(parts[2])
-                );
+                if (parts.length != 3) return false;
+                storageEngine.put(unescape(parts[1]), unescape(parts[2]));
+                return true;
             }
 
             case "DELETE" -> {
-
-                if (parts.length != 2) {
-                    return;
-                }
-
+                if (parts.length != 2) return false;
                 try {
-                    storageEngine.delete(
-                            unescape(parts[1])
-                    );
-                } catch (KeyNotFoundException ignored) {
-                }
+                    storageEngine.delete(unescape(parts[1]));
+                } catch (KeyNotFoundException ignored) {}
+                return true;
             }
 
             default -> {
                 // Ignore unknown records
+                return false;
             }
         }
     }

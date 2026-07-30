@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 public class AppendOnlyLog implements PersistenceStrategy {
 
     private final Path logPath;
+    private boolean crashAfterPartialWrite = false;
 
     /**
      * Spring constructor.
@@ -64,10 +65,14 @@ public class AppendOnlyLog implements PersistenceStrategy {
      */
     private void appendLine(String line) throws IOException {
 
-        try (BufferedWriter writer = Files.newBufferedWriter(
-                logPath,
-                StandardOpenOption.APPEND
-        )) {
+        try (BufferedWriter writer = Files.newBufferedWriter(logPath, StandardOpenOption.APPEND)) {
+
+            if(crashAfterPartialWrite) {
+                int midpoint = line.length() / 2;
+                writer.write(line.substring(0, midpoint));
+                writer.flush();
+                throw new RuntimeException("Injected crash");
+            }
 
             writer.write(line);
             writer.newLine();
@@ -97,6 +102,10 @@ public class AppendOnlyLog implements PersistenceStrategy {
 
     public void truncate() throws IOException {
         Files.newBufferedWriter(logPath, StandardOpenOption.TRUNCATE_EXISTING).close();
+    }
+
+    public void enableCrashAfterPartialWrite() {
+        crashAfterPartialWrite = true;
     }
 
 }
