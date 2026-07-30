@@ -1,5 +1,8 @@
 package com.atlaskv.lru;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class LRUCache {
 
     private final Node head;
@@ -133,5 +136,39 @@ public class LRUCache {
 
     public int size() {
         return size;
+    }
+
+    public int nodeCount() {
+        int count = 0;
+        Node current = head.getNext();
+        while (current != tail) {
+            count++;
+            current = current.getNext();
+        }
+        return count;
+    }
+
+    public boolean hasCycle() {
+        Node slow = head;
+        Node fast = head;
+        while(fast != null && fast.getNext() != null) {
+            slow = slow.getNext();
+            fast = fast.getNext().getNext();
+            if(slow == fast) return true;
+        }
+        return false;
+    }
+
+    public List<String> keysInOrder() {
+        List<String> keys = new ArrayList<>();
+
+        Node current = head.getNext();
+
+        while (current != tail) {
+            keys.add(current.getKey());
+            current = current.getNext();
+        }
+
+        return List.copyOf(keys);
     }
 }

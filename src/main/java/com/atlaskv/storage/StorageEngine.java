@@ -1,7 +1,10 @@
 package com.atlaskv.storage;
 
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -101,6 +104,10 @@ public class StorageEngine {
         return storage.size();
     }
 
+    public boolean isWithinCapacity() {
+        return storage.size() <= capacity;
+    }
+
     public int capacity() {
         return capacity;
     }
@@ -132,5 +139,25 @@ public class StorageEngine {
         }
 
         return copy;
+    }
+
+    public int lruNodeCount() {
+        return lruCache.nodeCount();
+    }
+
+    public boolean hasCycle() {
+        return lruCache.hasCycle();
+    }
+
+    public boolean isLruConsistent() {
+
+    List<String> lruKeys = lruCache.keysInOrder();
+
+        if (lruKeys.size() != storage.size()) return false;
+        Set<String> uniqueKeys = new HashSet<>(lruKeys);
+
+        if (uniqueKeys.size() != lruKeys.size()) return false; // duplicate node in LRU
+
+        return storage.keySet().equals(uniqueKeys);
     }
 }
