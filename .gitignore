@@ -62,3 +62,6 @@ out/
 # JVM crash logs
 hs_err_pid*
 replay_pid*
+
+appendonly.aof
+snapshot.dat
