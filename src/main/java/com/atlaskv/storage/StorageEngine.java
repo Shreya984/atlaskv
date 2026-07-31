@@ -5,14 +5,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
-
 import org.springframework.stereotype.Component;
 
 import com.atlaskv.exception.KeyNotFoundException;
 import com.atlaskv.lru.LRUCache;
 import com.atlaskv.lru.Node;
 import com.atlaskv.storage.mutation.PutMutation;
+import com.atlaskv.storage.mutation.DeleteMutation;
 
 @Component
 public class StorageEngine {
@@ -22,8 +21,6 @@ public class StorageEngine {
     private final Map<String, Node> storage;
     private final LRUCache lruCache;
     private final int capacity;
-
-    private final ReentrantLock lock = new ReentrantLock();
 
     public StorageEngine() {
         this(DEFAULT_CAPACITY);
@@ -39,45 +36,44 @@ public class StorageEngine {
      * Insert a new key or update an existing key.
      */
     public PutMutation put(String key, String value) {
-        lock.lock();
         PutMutation mutation = new PutMutation();
-        try {
-            Node existing = storage.get(key);
+        Node existing = storage.get(key);
+        // Existing key
+        if (existing != null) {
+            mutation.setExistingNode(existing);
+            mutation.setOldValue(existing.getValue());
 
-            // Existing key
-            if (existing != null) {
-                mutation.setExistingNode(existing);
-                mutation.setOldValue(existing.getValue());
+            mutation.setExistingPosition(lruCache.positionOf(existing));
 
-                mutation.setExistingPosition(lruCache.positionOf(existing));
+            existing.setValue(value);
+            lruCache.moveToFront(existing);
 
-                existing.setValue(value);
-                lruCache.moveToFront(existing);
+            return mutation;
+        }
 
-                return mutation;
-            }
+        // Cache full
+        if (storage.size() >= capacity) {
 
-            // Cache full
-            if (storage.size() >= capacity) {
+            Node victim = lruCache.leastRecentlyUsed();
 
-                Node victim = lruCache.leastRecentlyUsed();
-                if(victim != null) {
-                    mutation.setEvictedNode(victim);
-                    mutation.setEvictedPosition(lruCache.positionOf(victim));
-                }
+            if (victim != null) {
+
+                mutation.setEvictedNode(victim);
+
+                mutation.setEvictedPosition(lruCache.positionOf(victim));
+
                 lruCache.remove(victim);
+
                 storage.remove(victim.getKey());
             }
-
-            Node node = new Node(key, value);
-
-            mutation.setNewInsert(true);
-            mutation.setInsertedNode(node);
-            storage.put(key, node);
-            lruCache.addFirst(node);
-        } finally {
-            lock.unlock();
         }
+
+        Node node = new Node(key, value);
+
+        mutation.setNewInsert(true);
+        mutation.setInsertedNode(node);
+        storage.put(key, node);
+        lruCache.addFirst(node);
         return mutation;
     }
 
@@ -90,8 +86,8 @@ public class StorageEngine {
             Node inserted = mutation.getInsertedNode();
 
             if (inserted != null) {
-                storage.remove(inserted.getKey());
                 lruCache.remove(inserted);
+                storage.remove(inserted.getKey());
             }
 
             if (mutation.getEvictedNode() != null) {
@@ -143,65 +139,71 @@ public class StorageEngine {
      * changes its recency in the LRU list.
      */
     public String get(String key) {
-
-        lock.lock();
-
-        try {
-            Node node = storage.get(key);
-
-            if (node == null) throw new KeyNotFoundException(key);
-
-            lruCache.moveToFront(node);
-
-            return node.getValue();
-        } finally {
-            lock.unlock();
-        }
+        Node node = storage.get(key);
+        if (node == null) throw new KeyNotFoundException(key);
+        lruCache.moveToFront(node);
+        return node.getValue();
     }
 
     /**
      * Delete a key.
      */
-    public void delete(String key) {
+    public DeleteMutation delete(String key) {
+        DeleteMutation mutation = new DeleteMutation();
+        Node node = storage.get(key);
 
-        lock.lock();
+        if (node == null) throw new KeyNotFoundException(key);
 
-        try {
-            Node node = storage.get(key);
-            if (node == null) throw new KeyNotFoundException(key);
-            lruCache.remove(node);
-            storage.remove(key);
-        } finally {
-            lock.unlock();
+        mutation.setDeletedNode(node);
+
+        mutation.setDeletedPosition(lruCache.positionOf(node));
+
+        lruCache.remove(node);
+
+        storage.remove(key);
+
+        return mutation;
+    }
+
+    public void rollback(DeleteMutation mutation) {
+
+        if (mutation == null) return;
+
+        Node deleted = mutation.getDeletedNode();
+
+        if (deleted == null) return;
+
+        storage.put(
+                deleted.getKey(),
+                deleted
+        );
+
+        LRUCache.NodePosition position =
+                mutation.getDeletedPosition();
+
+        if (position == null) {
+            throw new IllegalStateException(
+                    "Deleted node position was not recorded."
+            );
         }
+
+        lruCache.restoreBetween(
+                position.previous(),
+                deleted,
+                position.next()
+        );
     }
 
     public boolean containsKey(String key) {
-        lock.lock();
-        try {
-            
-            return storage.containsKey(key);
-        } finally {
-            lock.unlock();
-        }
+        return storage.containsKey(key);
     }
 
     public int size() {
-        lock.lock();
-        try {
-            return storage.size();
-        } finally {
-            lock.unlock();
-        }
+        return storage.size();
     }
 
     public boolean isWithinCapacity() {
-        lock.lock();
-        try {
-            return storage.size() <= capacity;
-        } finally {
-            lock.unlock();
-        }
+        return storage.size() <= capacity;
     }
 
     public int capacity() {
@@ -213,77 +215,45 @@ public class StorageEngine {
      * Used by unit tests.
      */
     public void validate() {
-        lock.lock();
-        try {
-            if (storage.size() != lruCache.size()) {
-                throw new IllegalStateException("Map size and LRU size differ.");
-            }
+        if (storage.size() != lruCache.size()) {
+            throw new IllegalStateException("Map size and LRU size differ.");
+        }
 
-            if (storage.size() > capacity) {
-                throw new IllegalStateException("Cache exceeded capacity.");
-            }
-        } finally {
-            lock.unlock();
+        if (storage.size() > capacity) {
+            throw new IllegalStateException("Cache exceeded capacity.");
         }
     }
 
     public Map<String, String> snapshot() {
-        lock.lock();
-        try {
-            Map<String, String> copy = new HashMap<>();
+        Map<String, String> copy = new HashMap<>();
 
-            for (Node node : storage.values()) {
-                copy.put(node.getKey(), node.getValue());
-            }
-
-            return copy;
-        } finally {
-            lock.unlock();
+        for (Node node : storage.values()) {
+            copy.put(node.getKey(), node.getValue());
         }
+
+        return copy;
     }
 
     public int lruNodeCount() {
-        lock.lock();
-        try {
-            return lruCache.nodeCount();
-        } finally {
-            lock.unlock();
-        }
+        return lruCache.nodeCount();
     }
 
     public boolean hasCycle() {
-        lock.lock();
-        try {
-            return lruCache.hasCycle();
-        } finally {
-            lock.unlock();
-        }
+        return lruCache.hasCycle();
     }
 
     public boolean isLruConsistent() {
+        List<String> lruKeys = lruCache.keysInOrder();
 
-        lock.lock();
-        try {
-            List<String> lruKeys = lruCache.keysInOrder();
+        if (lruKeys.size() != storage.size()) return false;
+        Set<String> uniqueKeys = new HashSet<>(lruKeys);
 
-            if (lruKeys.size() != storage.size()) return false;
-            Set<String> uniqueKeys = new HashSet<>(lruKeys);
+        if (uniqueKeys.size() != lruKeys.size()) return false; // duplicate node in LRU
 
-            if (uniqueKeys.size() != lruKeys.size()) return false; // duplicate node in LRU
-
-            return storage.keySet().equals(uniqueKeys);
-        } finally {
-            lock.unlock();
-        }
+        return storage.keySet().equals(uniqueKeys);
     }
 
     public List<String> keysInOrder() {
-        lock.lock();
-        try {
-            return lruCache.keysInOrder();
-        }
-        finally {
-            lock.unlock();
-        }
+        return lruCache.keysInOrder();
     }
 }

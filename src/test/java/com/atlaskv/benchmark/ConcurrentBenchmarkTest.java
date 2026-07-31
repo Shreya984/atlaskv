@@ -1,6 +1,8 @@
 package com.atlaskv.benchmark;
 
 import com.atlaskv.exception.KeyNotFoundException;
+import com.atlaskv.persistence.PersistenceStrategy;
+import com.atlaskv.service.StorageService;
 import com.atlaskv.storage.StorageEngine;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +13,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 class ConcurrentBenchmarkTest {
 
@@ -21,7 +24,8 @@ class ConcurrentBenchmarkTest {
     void benchmarkConcurrentLoad() throws Exception {
 
         StorageEngine engine = new StorageEngine(6_000);
-
+        PersistenceStrategy persistence = mock(PersistenceStrategy.class);
+        StorageService service = new StorageService(engine, persistence);
         ExecutorService executor =
                 Executors.newFixedThreadPool(THREADS);
 
@@ -52,7 +56,7 @@ class ConcurrentBenchmarkTest {
                         String key = "T" + threadId + "-P" + i;
                         String value = "value-" + threadId + "-" + i;
 
-                        engine.put(key, value);
+                        service.put(key, value);
 
                         puts.incrementAndGet();
                     }
@@ -69,7 +73,7 @@ class ConcurrentBenchmarkTest {
                                         + random.nextInt(putsPerThread);
 
                         try {
-                            engine.get(key);
+                            service.get(key);
                         }
                         catch (KeyNotFoundException ignored) {
                             // Another thread may not have inserted

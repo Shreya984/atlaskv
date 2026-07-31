@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import com.atlaskv.persistence.PersistenceStrategy;
 import com.atlaskv.storage.StorageEngine;
+import com.atlaskv.storage.mutation.DeleteMutation;
 import com.atlaskv.storage.mutation.PutMutation;
 
 @Service
@@ -38,12 +39,13 @@ public class StorageService {
 
     public void put(String key, String value) {
         lock.writeLock().lock();
-        PutMutation mutation = storageEngine.put(key, value);
+        PutMutation mutation = null;
         try {
+            mutation = storageEngine.put(key, value);
             persistenceStrategy.appendPut(key, value);
         }
         catch(IOException e){
-            storageEngine.rollback(mutation);
+            if(mutation != null) storageEngine.rollback(mutation);
             throw new RuntimeException(
                     "Failed to persist PUT operation.",
                     e
@@ -73,13 +75,30 @@ public class StorageService {
 
         lock.writeLock().lock();
 
+        DeleteMutation mutation = null;
+
         try {
-            storageEngine.delete(key);
+
+            mutation = storageEngine.delete(key);
+
             persistenceStrategy.appendDelete(key);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to persist DELETE operation.", e);
-        } finally {
+
+        }
+        catch (IOException e) {
+
+            if (mutation != null) {
+                storageEngine.rollback(mutation);
+            }
+
+            throw new RuntimeException(
+                    "Failed to persist DELETE operation.",
+                    e
+            );
+        }
+        finally {
+
             lock.writeLock().unlock();
+
         }
     }
 }
