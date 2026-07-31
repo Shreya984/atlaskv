@@ -5,14 +5,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.stereotype.Component;
 
 import com.atlaskv.exception.KeyNotFoundException;
 import com.atlaskv.lru.LRUCache;
 import com.atlaskv.lru.Node;
-
-import java.util.concurrent.locks.ReentrantLock;
+import com.atlaskv.storage.mutation.PutMutation;
 
 @Component
 public class StorageEngine {
@@ -38,36 +38,100 @@ public class StorageEngine {
     /**
      * Insert a new key or update an existing key.
      */
-    public void put(String key, String value) {
-
+    public PutMutation put(String key, String value) {
         lock.lock();
-
+        PutMutation mutation = new PutMutation();
         try {
             Node existing = storage.get(key);
 
             // Existing key
             if (existing != null) {
+                mutation.setExistingNode(existing);
+                mutation.setOldValue(existing.getValue());
+
+                mutation.setExistingPosition(lruCache.positionOf(existing));
+
                 existing.setValue(value);
                 lruCache.moveToFront(existing);
-                return;
+
+                return mutation;
             }
 
             // Cache full
             if (storage.size() >= capacity) {
 
-                Node victim = lruCache.removeLeastRecentlyUsed();
-
-                if (victim != null) {
-                    storage.remove(victim.getKey());
+                Node victim = lruCache.leastRecentlyUsed();
+                if(victim != null) {
+                    mutation.setEvictedNode(victim);
+                    mutation.setEvictedPosition(lruCache.positionOf(victim));
                 }
+                lruCache.remove(victim);
+                storage.remove(victim.getKey());
             }
 
             Node node = new Node(key, value);
 
+            mutation.setNewInsert(true);
+            mutation.setInsertedNode(node);
             storage.put(key, node);
             lruCache.addFirst(node);
         } finally {
             lock.unlock();
+        }
+        return mutation;
+    }
+
+    public void rollback(PutMutation mutation) {
+
+        if (mutation == null) return;
+
+        if (mutation.isNewInsert()) {
+
+            Node inserted = mutation.getInsertedNode();
+
+            if (inserted != null) {
+                storage.remove(inserted.getKey());
+                lruCache.remove(inserted);
+            }
+
+            if (mutation.getEvictedNode() != null) {
+
+                Node victim = mutation.getEvictedNode();
+                storage.put(victim.getKey(), victim);
+
+                LRUCache.NodePosition position = mutation.getEvictedPosition();
+
+                lruCache.restoreBetween(
+                        position.previous(),
+                        victim,
+                        position.next()
+                );
+            }
+
+            return;
+        }
+
+        if (mutation.getExistingNode() != null) {
+
+            Node existing = mutation.getExistingNode();
+
+            existing.setValue(mutation.getOldValue());
+
+            lruCache.remove(existing);
+
+            LRUCache.NodePosition position = mutation.getExistingPosition();
+
+            if (position == null) {
+                throw new IllegalStateException(
+                        "Existing node position was not recorded."
+                );
+            }
+
+            lruCache.restoreBetween(
+                    position.previous(),
+                    existing,
+                    position.next()
+            );
         }
     }
 
@@ -209,6 +273,16 @@ public class StorageEngine {
 
             return storage.keySet().equals(uniqueKeys);
         } finally {
+            lock.unlock();
+        }
+    }
+
+    public List<String> keysInOrder() {
+        lock.lock();
+        try {
+            return lruCache.keysInOrder();
+        }
+        finally {
             lock.unlock();
         }
     }

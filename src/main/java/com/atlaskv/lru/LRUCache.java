@@ -10,6 +10,8 @@ public class LRUCache {
 
     private int size;
 
+    public record NodePosition(Node previous, Node next) {}
+
     public LRUCache() {
 
         head = new Node("__HEAD__", "");
@@ -170,5 +172,45 @@ public class LRUCache {
         }
 
         return List.copyOf(keys);
+    }
+
+    /**
+     * Restores a node between its original neighbours.
+     * Used only during rollback.
+     */
+    public void restoreBetween(Node previous, Node node, Node next) {
+
+        if (previous == null || node == null || next == null) {
+            throw new IllegalArgumentException("Arguments cannot be null.");
+        }
+
+        validateRealNode(node);
+
+        previous.setNext(node);
+        node.setPrevious(previous);
+
+        node.setNext(next);
+        next.setPrevious(node);
+
+        size++;
+    }
+
+    /**
+     * Captures the current position of a node in the LRU list.
+     * Used for rollback.
+     */
+    public NodePosition positionOf(Node node) {
+
+        validateRealNode(node);
+
+        return new NodePosition(
+                node.getPrevious(),
+                node.getNext()
+        );
+    }
+
+    public Node leastRecentlyUsed() {
+        if (isEmpty()) return null;
+        return tail.getPrevious();
     }
 }
