@@ -24,17 +24,17 @@ This is a single-node project. It does not do replication, sharding, or any of t
 
 ## Why GET takes a write lock
 
-The lock is a single `ReentrantReadWriteLock` at the service layer. GET uses the write side of it, not the read side, and that's worth explaining because it looks wrong at first glance.
+The lock is a single `ReentrantReadWriteLock` at the service layer. GET uses the write side of it, not the read side.
 
 Every GET moves the accessed node to the front of the LRU list to record that it was just used. That's a mutation of shared state, not a read, even though the value returned to the caller doesn't change. Letting multiple threads run GET concurrently under a read lock would mean multiple threads restructuring the same linked list at once, which corrupts it. So GET takes the same write lock as PUT and DELETE.
 
-The consequence is that this store doesn't get concurrent reads. Every operation, including a plain lookup, is serialized against every other operation. That's a real cost, and the trade was made deliberately: a single lock across a small number of operations is something you can reason about with confidence, and reasoning about it correctly mattered more here than squeezing out extra throughput.
+The consequence is that this store doesn't get concurrent reads. Every operation, including a plain lookup, is serialized against every other operation. That's a real cost, and the trade was made deliberately.
 
 ## Persistence and recovery
 
 Writes are logged to an append-only file (`appendonly.aof` by default) as they happen, and the store also produces periodic snapshots (`snapshot.dat`) so the log doesn't grow without bound. On startup, `RecoveryManager` loads the most recent snapshot, then replays whatever log entries came after it.
 
-Durability here is `flush()`, not `fsync()`. A `flush()` gets the data to the operating system, which is enough to survive the Java process dying. It is not enough to survive the OS itself crashing or a power loss before the OS gets around to writing that buffer to disk. If a write returns successfully from this store, it will survive a process crash. It will not necessarily survive the machine losing power a moment later. That's a real limitation, stated plainly rather than glossed over, since anyone using something like this should know exactly what guarantee they're getting.
+Durability here is `flush()`, not `fsync()`. A `flush()` gets the data to the operating system, which is enough to survive the Java process dying. It is not enough to survive the OS itself crashing or a power loss before the OS gets around to writing that buffer to disk. If a write returns successfully from this store, it will survive a process crash. It will not necessarily survive the machine losing power a moment later.
 
 If the log ends mid-write (the `crash-next-write` debug endpoint exists specifically to test this), the replayer discards the incomplete final entry rather than trying to parse it. Recovery reconstructs the same key-value contents that existed before shutdown. LRU recency order is not part of what's persisted, so after a restart the store still has the right data, just not the same "most recently used" ordering it had before the crash.
 
