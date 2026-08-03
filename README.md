@@ -79,4 +79,4 @@ Tests are organized by what they're checking rather than by class:
 
 ## Out of scope
 
-TTL expiration, replication, sharding, distributed operation, transactions, authentication, and metrics were all left out on purpose, to keep the scope to what a single process's concurrency and durability story actually requires. TTL in particular would need its own reasoning about how expiration interacts with eviction and the log, and wasn't worth doing halfway.
+TTL expiration, replication, sharding, distributed operation, transactions, authentication, and metrics were all left out on purpose, to keep the scope to what a single process's concurrency and durability story actually requires. TTL in particular would need its own reasoning about how expiration interacts with eviction and the log.
